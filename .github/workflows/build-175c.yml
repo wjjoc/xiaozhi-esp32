@@ -1,0 +1,25 @@
+name: Build 175C
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v6.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build 1.75C
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python scripts/build.py waveshare/esp32-s3-touch-amoled-1.75 --name esp32-s3-touch-amoled-1.75c --language zh-CN
+          ls -l build/merged-binary.bin
+      - uses: actions/upload-artifact@v4
+        with:
+          name: merged-175c
+          path: build/merged-binary.bin
+          if-no-files-found: error
