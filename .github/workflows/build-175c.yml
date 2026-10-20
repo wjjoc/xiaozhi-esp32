@@ -12,7 +12,7 @@ jobs:
       image: espressif/idf:release-v6.1
     steps:
       - uses: actions/checkout@v4
-      - name: Build 1.75C custom wake word: ni hao mei bao
+      - name: Build 1.75C custom wake word (ni hao mei bao)
         shell: bash
         run: |
           source "$IDF_PATH/export.sh"
