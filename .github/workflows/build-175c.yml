@@ -12,14 +12,40 @@ jobs:
       image: espressif/idf:release-v6.1
     steps:
       - uses: actions/checkout@v4
-      - name: Build 1.75C
+      - name: Build 1.75C with custom wake word
         shell: bash
         run: |
           source "$IDF_PATH/export.sh"
-          python scripts/build.py waveshare/esp32-s3-touch-amoled-1.75 --name esp32-s3-touch-amoled-1.75c --language zh-CN
+          python scripts/build.py waveshare/esp32-s3-touch-amoled-1.75 --name esp32-s3-touch-amoled-1.75c --language zh-CN --wake-word disabled
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("sdkconfig")
+          s = p.read_text()
+          def setkv(s, k, v):
+              s = re.sub(rf"^{re.escape(k)}=.*\n", "", s, flags=re.M)
+              s = re.sub(rf"^# {re.escape(k)} is not set\n", "", s, flags=re.M)
+              return s + f"{k}={v}\n"
+          s = setkv(s, "CONFIG_WAKE_WORD_DISABLED", "n")
+          s = setkv(s, "CONFIG_USE_AFE_WAKE_WORD", "n")
+          s = setkv(s, "CONFIG_USE_CUSTOM_WAKE_WORD", "y")
+          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD", '"mei bao mei bao"')
+          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD_DISPLAY", '"mei bao mei bao"')
+          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD", "40")
+          s = setkv(s, "CONFIG_SR_MN_CN_MULTINET7_QUANT", "y")
+          p.write_text(s)
+          print("=== injected ===")
+          print("\n".join(l for l in s.splitlines() if "WAKE_WORD" in l or "MULTINET" in l))
+          PY
+          idf.py build 2>&1 | tail -25
+          idf.py merge-bin
           ls -l build/merged-binary.bin
+          echo "=== final sdkconfig check ==="
+          grep -E "CONFIG_USE_CUSTOM_WAKE_WORD|CONFIG_USE_AFE_WAKE_WORD|CONFIG_CUSTOM_WAKE_WORD=|CONFIG_CUSTOM_WAKE_WORD_DISPLAY|CONFIG_SR_MN_CN_MULTINET" sdkconfig
       - uses: actions/upload-artifact@v4
         with:
           name: merged-175c
-          path: build/merged-binary.bin
+          path: |
+            build/merged-binary.bin
+            sdkconfig
           if-no-files-found: error
