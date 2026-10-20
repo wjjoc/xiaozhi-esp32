@@ -1,0 +1,125 @@
+name: Build Meibao 175C 32MB official
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v6.1
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use official 32m.csv verbatim
+        shell: bash
+        run: |
+          ls -l partitions/v2/32m.csv
+          cp partitions/v2/32m.csv partitions_32m_official.csv
+          echo "=== partitions_32m_official.csv ==="
+          cat partitions_32m_official.csv
+          python - <<'PY'
+          import struct
+          rows = []
+          for line in open("partitions_32m_official.csv"):
+              line = line.strip()
+              if not line or line.startswith("#"):
+                  continue
+              rows.append([c.strip() for c in line.split(",")])
+          size_map = {}
+          off = 0x9000
+          for name, typ, sub, *rest in rows:
+              o = rest[0]
+              s = rest[1]
+              def tobytes(v):
+                  v = v.strip()
+                  if not v:
+                      return None
+                  return int(v, 0) if v.lower().startswith(("0x",)) else int(v)
+              def sizebytes(v):
+                  v = v.strip()
+                  mult = 1
+                  if v.lower().endswith("k"):
+                      mult, v = 1024, v[:-1]
+                  elif v.lower().endswith("m"):
+                      mult, v = 1024*1024, v[:-1]
+                  return int(v, 0) * mult
+              size = sizebytes(s)
+              if o:
+                  off = tobytes(o)
+              print(f"  {name:10s} off={off:#09x} size={size/1024:.0f}K")
+              size_map[name] = (off, size)
+              off += size
+          assert size_map["assets"][0] == 0xA00000, size_map["assets"]
+          assert size_map["assets"][1] == 16*1024*1024, size_map["assets"]
+          assert size_map["nvs"][0] == 0x3B000, size_map["nvs"]
+          print("VERIFIED: assets@0xA00000 16MB, nvs@0x3B000")
+          PY
+
+      - name: Configure
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          python scripts/build.py waveshare/esp32-s3-touch-amoled-1.75 --name esp32-s3-touch-amoled-1.75c --language zh-CN --wake-word disabled
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("sdkconfig")
+          s = p.read_text()
+          def setkv(s, k, v):
+              s = re.sub(rf"^{re.escape(k)}=.*\n", "", s, flags=re.M)
+              s = re.sub(rf"^# {re.escape(k)} is not set\n", "", s, flags=re.M)
+              return s + f"{k}={v}\n"
+          s = setkv(s, "CONFIG_ESPTOOLPY_FLASHSIZE", '"32MB"')
+          s = setkv(s, "CONFIG_ESPTOOLPY_FLASHSIZE_32MB", "y")
+          s = setkv(s, "CONFIG_PARTITION_TABLE_CUSTOM", "y")
+          s = setkv(s, "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME", '"partitions_32m_official.csv"')
+          s = setkv(s, "CONFIG_WAKE_WORD_DISABLED", "n")
+          s = setkv(s, "CONFIG_USE_AFE_WAKE_WORD", "n")
+          s = setkv(s, "CONFIG_USE_CUSTOM_WAKE_WORD", "y")
+          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD", '"ni hao mei bao"')
+          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD_DISPLAY", '"ni hao mei bao"')
+          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD", "40")
+          s = setkv(s, "CONFIG_SR_MN_CN_MULTINET7_QUANT", "y")
+          p.write_text(s)
+          print("=== injected ===")
+          print("\n".join(l for l in s.splitlines()
+                          if any(k in l for k in ("FLASHSIZE", "PARTITION_TABLE", "WAKE_WORD"))))
+          PY
+
+      - name: Build
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          idf.py build 2>&1 | tail -30
+          echo "=== app bins ==="
+          ls -l build/*.bin build/bootloader/*.bin build/partition_table/*.bin
+          python - <<'PY'
+          import struct, glob
+          p = glob.glob("build/bootloader/bootloader.bin")[0]
+          d = open(p, "rb").read()
+          print("bootloader header flash-size byte:", hex(d[3]), "(0x5f = 32MB)")
+          pt = open("build/partition_table/partition-table.bin", "rb").read()
+          for i in range(10):
+              e = pt[i*32:(i+1)*32]
+              magic, typ, sub, o, size = struct.unpack("<HBBII", e[:12])
+              if magic != 0x50AA:
+                  break
+              print("  ", e[12:28].rstrip(b"\x00").decode(), f"off={o:#x} size={size:#x}")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meibao-32m-official
+          path: |
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/xiaozhi.bin
+            build/*.bin
+            sdkconfig
+            partitions_32m_official.csv
+          if-no-files-found: error
