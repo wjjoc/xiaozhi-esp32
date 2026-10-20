@@ -12,7 +12,7 @@ jobs:
       image: espressif/idf:release-v6.1
     steps:
       - uses: actions/checkout@v4
-      - name: Build 1.75C with custom wake word
+      - name: Build 1.75C custom wake word: ni hao mei bao
         shell: bash
         run: |
           source "$IDF_PATH/export.sh"
@@ -29,8 +29,8 @@ jobs:
           s = setkv(s, "CONFIG_WAKE_WORD_DISABLED", "n")
           s = setkv(s, "CONFIG_USE_AFE_WAKE_WORD", "n")
           s = setkv(s, "CONFIG_USE_CUSTOM_WAKE_WORD", "y")
-          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD", '"mei bao mei bao"')
-          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD_DISPLAY", '"mei bao mei bao"')
+          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD", '"ni hao mei bao"')
+          s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD_DISPLAY", '"ni hao mei bao"')
           s = setkv(s, "CONFIG_CUSTOM_WAKE_WORD_THRESHOLD", "40")
           s = setkv(s, "CONFIG_SR_MN_CN_MULTINET7_QUANT", "y")
           p.write_text(s)
